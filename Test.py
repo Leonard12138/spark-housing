@@ -2,10 +2,28 @@ import pandas as pd
 import psycopg2
 from psycopg2 import sql
 
-# Read CSV into pandas DataFrame
-df = pd.read_excel('Data/testing01.xlsx')
-df.columns = df.columns.str.lower().str.replace(' ', '_')
-# Print the DataFrame to ensure it's loaded correctly
+# Load the Excel file
+file_path = 'Data/testing01.xlsx'
+df = pd.read_excel(file_path)
+
+# Clean and format column names
+df.columns = (
+    df.columns
+    .str.lower()
+    .str.replace(' ', '_')
+    .str.replace('-', '', regex=False)
+    .str.replace('_+', '_', regex=True)
+)
+
+# Clean numeric columns: Replace '-' and 'NaN' with None
+numeric_columns = [
+    col for col in df.columns if df[col].dtype in ['float64', 'int64'] or 'remarks' not in col
+]
+for col in numeric_columns:
+    df[col] = pd.to_numeric(df[col], errors='coerce')  # Convert to numeric, invalid values become NaN
+
+# Print cleaned DataFrame
+print("Cleaned DataFrame:")
 print(df)
 
 # Database connection setup
@@ -19,39 +37,28 @@ try:
     )
     cursor = connection.cursor()
 
-    # Check the contents of the average_rents table
-    cursor.execute("SELECT * FROM average_rents;")
-    rows = cursor.fetchall()
-    for row in rows:
-        print(row)
-    print("I'm in the database!")
-
-    # Define the table name (ensure no extra space)
+    # Define the table name
     table_name = "average_rents"
 
     # Get column names from DataFrame
     columns = df.columns.tolist()
 
-    # Create dynamic query placeholders with properly quoted column names
-    column_names = ', '.join([f'"{col}"' for col in columns])  # Quote column names
+    # Create dynamic query placeholders
+    column_names = ', '.join([f'"{col}"' for col in columns])
     placeholders = ', '.join(['%s'] * len(columns))
 
-    # Insert data into the table row by row
-    count = 0
+    # Insert data into the table
     for index, row in df.iterrows():
-        print(count)
-        count += 1
         # Prepare the insert query
         query = sql.SQL("INSERT INTO {} ({}) VALUES ({})").format(
             sql.Identifier(table_name),
             sql.SQL(column_names),
             sql.SQL(placeholders)
         )
-        
-        # Convert row to tuple and execute the query
+        # Execute the query with row values
         cursor.execute(query, tuple(row))
 
-    # Commit changes to the database
+    # Commit changes
     connection.commit()
     print("Data inserted successfully!")
 
@@ -59,10 +66,8 @@ except Exception as e:
     print("An error occurred:", e)
 
 finally:
-    # Close cursor and connection
+    # Close connections
     if cursor:
         cursor.close()
     if connection:
         connection.close()
-
-print("Hello World!")
